@@ -316,7 +316,14 @@ class AmazonReviewScraper:
                         pass
                 
                 if star_element:
-                    star_element.click()
+                    # 滚动到元素位置避免被遮挡
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", star_element)
+                    time.sleep(1)
+                    # 尝试直接点击，如果失败则使用JavaScript点击
+                    try:
+                        star_element.click()
+                    except:
+                        self.driver.execute_script("arguments[0].click();", star_element)
                     time.sleep(3)
                     print(f"{star_filter} 星筛选已应用")
                 else:
