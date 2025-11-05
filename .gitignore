@@ -1,36 +1,16 @@
 # Python
-.venv/
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-
-# Cookies and data files
-amazon_cookies.pkl
-*.csv
-*.json
-
-# Screenshots
-*.png
+dist/
+build/
+.venv/
+venv/
+env/
+ENV/
 
 # IDE
 .vscode/
@@ -43,3 +23,22 @@ amazon_cookies.pkl
 .DS_Store
 Thumbs.db
 
+# Project specific
+*.pkl
+*.csv
+*.json
+extracted_images/
+*.png
+*.jpg
+*.jpeg
+
+# Elasticsearch
+elastic-start-local/.env
+elastic-start-local/data/
+elastic-start-local/logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log

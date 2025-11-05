@@ -1,0 +1,19 @@
+# RAG System Dependencies
+PyPDF2>=3.0.0
+pdfplumber>=0.10.0
+pymupdf>=1.23.0  # For advanced PDF processing
+pillow>=10.0.0  # For image processing
+pandas>=2.0.0  # For table processing
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-openai>=0.0.5
+langchain-text-splitters>=0.1.0
+sentence-transformers>=2.2.0  # For embeddings
+elasticsearch>=8.11.0
+elasticsearch-dsl>=8.11.0
+tiktoken>=0.5.0  # For token counting
+numpy>=1.24.0
+transformers>=4.35.0  # For reranker model
+torch>=2.0.0  # For reranker model
+openai>=1.0.0  # For LLM API (optional)
+
