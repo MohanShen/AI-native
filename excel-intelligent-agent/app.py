@@ -4,20 +4,43 @@ Excel智能体主应用
 """
 import os
 import json
+import math
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import openai
+import pandas as pd
+import numpy as np
 from excel_preprocessor import ExcelPreprocessor
 from nlp_parser import NLPParser
 from code_generator import CodeGenerator
 from code_executor import CodeExecutor
+
+
+def clean_nan_for_json(obj):
+    """
+    递归清理对象中的NaN值，将其转换为None（JSON中的null）
+    """
+    if isinstance(obj, dict):
+        return {key: clean_nan_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_for_json(item) for item in obj]
+    elif isinstance(obj, (float, np.floating)):
+        if pd.isna(obj) or math.isnan(obj):
+            return None
+        return obj
+    elif isinstance(obj, (int, np.integer)):
+        return int(obj)
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'excel-agent-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # 初始化组件
-preprocessor = ExcelPreprocessor(knowledge_base_path="knowledge_base")
+preprocessor = ExcelPreprocessor(knowledge_base_path="knowledge_base", openai_client=None, use_llm_analysis=False)
 nlp_parser = None  # 将在启动时初始化
 code_generator = CodeGenerator()
 
@@ -31,19 +54,30 @@ def index():
     return render_template('index.html')
 
 
+def _initialize_nlp_parser(api_key: str):
+    """初始化NLP解析器的辅助函数"""
+    global nlp_parser, preprocessor
+    nlp_parser = NLPParser(api_key=api_key)
+    
+    # 同时更新preprocessor的OpenAI客户端，启用LLM分析
+    openai_client = openai.OpenAI(api_key=api_key)
+    preprocessor.openai_client = openai_client
+    preprocessor.use_llm_analysis = True
+    
+    return nlp_parser
+
 @app.route('/api/initialize', methods=['POST'])
 def initialize():
     """初始化API密钥和加载文件"""
-    data = request.json
-    api_key = data.get('api_key')
+    data = request.json or {}
+    api_key = data.get('api_key') or os.environ.get('OPENAI_API')
     
     if not api_key:
-        return jsonify({'error': 'API密钥不能为空'}), 400
+        return jsonify({'error': 'API密钥不能为空，请提供api_key或设置OPENAI_API环境变量'}), 400
     
     try:
         # 初始化NLP解析器
-        global nlp_parser
-        nlp_parser = NLPParser(api_key=api_key)
+        _initialize_nlp_parser(api_key)
         
         # 加载所有Excel文件
         files = preprocessor.load_all_files()
@@ -52,7 +86,8 @@ def initialize():
         return jsonify({
             'success': True,
             'files': list(files.keys()),
-            'files_info': files_info
+            'files_info': files_info,
+            'message': '初始化成功'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -100,6 +135,10 @@ def query():
         executor = CodeExecutor(file_path)
         execution_result = executor.execute(generated_code)
         
+        # 清理执行结果中的NaN值，确保可以JSON序列化
+        if execution_result.get('result'):
+            execution_result['result'] = clean_nan_for_json(execution_result['result'])
+        
         # 保存会话数据
         session_data[session_id] = {
             'intent': intent,
@@ -112,7 +151,7 @@ def query():
             'success': True,
             'intent': intent,
             'code': generated_code,
-            'execution': execution_result,
+            'execution': clean_nan_for_json(execution_result),
             'used_columns': used_columns,
             'target_file': target_file
         })
@@ -181,8 +220,13 @@ def handle_voice_query(data):
         # 执行代码
         executor = CodeExecutor(file_path)
         execution_result = executor.execute(generated_code)
+        
+        # 清理执行结果中的NaN值，确保可以JSON序列化
+        if execution_result.get('result'):
+            execution_result['result'] = clean_nan_for_json(execution_result['result'])
+        
         emit('execution_complete', {
-            'result': execution_result,
+            'result': clean_nan_for_json(execution_result),
             'used_columns': used_columns,
             'target_file': target_file
         })
@@ -242,10 +286,63 @@ def list_files():
     })
 
 
+@app.route('/api/reload', methods=['POST'])
+def reload_files():
+    """重新加载所有Excel文件"""
+    try:
+        # 清空已加载的文件
+        preprocessor.processed_files.clear()
+        preprocessor.file_metadata.clear()
+        
+        # 重新加载所有文件
+        files = preprocessor.load_all_files()
+        files_info = preprocessor.get_all_files_info()
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功重新加载 {len(files)} 个文件',
+            'files': list(files.keys()),
+            'files_info': files_info
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # 确保知识库目录存在
     os.makedirs('knowledge_base', exist_ok=True)
     
+    # 加载Excel文件
+    try:
+        print("Loading Excel files on startup...")
+        preprocessor.load_all_files()
+        files_count = len(preprocessor.processed_files)
+        print(f"✓ Preloaded {files_count} Excel file(s)")
+    except Exception as e:
+        print(f"⚠ Warning: Could not preload files: {e}")
+        print("  Files will be loaded when you initialize the API key")
+    
+    # 尝试从环境变量初始化API密钥
+    api_key = os.environ.get('OPENAI_API')
+    if api_key:
+        try:
+            print("\nInitializing NLP parser and Excel preprocessor with OPENAI_API from environment...")
+            _initialize_nlp_parser(api_key)
+            print("✓ NLP parser initialized successfully")
+            print("✓ Excel preprocessor LLM analysis enabled")
+        except Exception as e:
+            print(f"⚠ Warning: Could not initialize NLP parser: {e}")
+            print("  You can initialize it later via the web interface")
+    else:
+        print("\n⚠ OPENAI_API environment variable not set")
+        print("  You can set it or initialize via the web interface")
+        print("  Excel preprocessor will use simple processing (no LLM analysis)")
+    
+    # 获取端口号（环境变量或默认5001，因为5000可能被macOS AirPlay占用）
+    port = int(os.environ.get('PORT', 5001))
+    
     # 启动服务器
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    print(f"\nStarting Excel Intelligent Agent on http://0.0.0.0:{port}")
+    print(f"Open your browser and navigate to http://localhost:{port}")
+    socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)
 

@@ -28,6 +28,7 @@ class CodeGenerator:
         intent_type = intent.get('intent', 'statistics')
         target_columns = intent.get('target_columns', [])
         operation = intent.get('operation', '数据分析')
+        keywords = intent.get('keywords', [])
         
         # 重置使用的列
         self.used_columns = []
@@ -42,7 +43,7 @@ class CodeGenerator:
         elif intent_type == 'sort':
             code = self._generate_sort_code(df, target_columns)
         elif intent_type == 'filter':
-            code = self._generate_filter_code(df, target_columns)
+            code = self._generate_filter_code(df, target_columns, intent, keywords)
         elif intent_type == 'correlation':
             code = self._generate_correlation_code(df, target_columns)
         elif intent_type == 'visualization':
@@ -248,20 +249,133 @@ result = {{
 """
         return code
     
-    def _generate_filter_code(self, df: pd.DataFrame, columns: List[str]) -> str:
+    def _generate_filter_code(self, df: pd.DataFrame, columns: List[str], intent: Dict = None, keywords: List[str] = None) -> str:
         """生成筛选代码"""
-        filter_cols = columns[:2] if columns else df.columns[:2].tolist()
-        self.used_columns = filter_cols
+        # 尝试找到正确的筛选列
+        filter_col = None
+        filter_value = None
         
-        filter_cols_str = str(filter_cols)
+        # 首先尝试从关键词中匹配列名（更准确，优先查找"班级"相关列）
+        if keywords:
+            # 查找包含"班"、"班级"等关键词的列
+            for col in df.columns:
+                col_str = str(col)
+                # 检查列名是否包含班级相关的关键词
+                if any(kw in col_str for kw in ['班', 'class', 'Class']):
+                    filter_col = col
+                    break
+                # 或者检查关键词是否在列名中
+                for kw in keywords:
+                    if '班' in kw and '班' in col_str:
+                        filter_col = col
+                        break
+                if filter_col:
+                    break
+        
+        # 如果没找到，从target_columns中找第一个存在的列
+        if not filter_col:
+            for col in columns:
+                if col in df.columns:
+                    filter_col = col
+                    break
+        
+        # 如果还是没找到，尝试模糊匹配
+        if not filter_col and keywords:
+            for col in df.columns:
+                col_lower = str(col).lower()
+                for kw in keywords:
+                    if kw.lower() in col_lower or col_lower in kw.lower():
+                        filter_col = col
+                        break
+                if filter_col:
+                    break
+        
+        # 如果还是没找到，使用第一个文本列
+        if not filter_col:
+            text_cols = df.select_dtypes(include=['object']).columns.tolist()
+            filter_col = text_cols[0] if text_cols else df.columns[0]
+        
+        # 从关键词中提取筛选值（比如"经济（2）"）
+        if keywords:
+            # 查找包含数字或括号的关键词，可能是筛选值
+            for kw in keywords:
+                if any(char.isdigit() or char in '（）()' for char in kw):
+                    # 如果关键词包含"班"，提取"经济（2）"部分
+                    if '班' in kw:
+                        # 尝试提取"经济（2）"部分
+                        import re
+                        match = re.search(r'([^班]+（\d+）)', kw)
+                        if match:
+                            filter_value = match.group(1)
+                        else:
+                            filter_value = kw.replace('班', '')
+                    else:
+                        filter_value = kw
+                    break
+            # 如果没有找到，使用最后一个关键词
+            if not filter_value and keywords:
+                filter_value = keywords[-1]
+                # 同样处理"班"的问题
+                if '班' in filter_value:
+                    import re
+                    match = re.search(r'([^班]+（\d+）)', filter_value)
+                    if match:
+                        filter_value = match.group(1)
+                    else:
+                        filter_value = filter_value.replace('班', '')
+        
+        self.used_columns = [filter_col] if filter_col else []
+        
+        filter_cols_str = str([filter_col]) if filter_col else "[]"
         file_path = df.attrs.get('file_path', 'data.xlsx')
-        code = f"""# 筛选分析
+        
+        # 生成筛选代码
+        if filter_value:
+            # 使用包含筛选
+            code = f"""# 筛选分析
 import pandas as pd
 
 # 读取数据
 df = pd.read_excel(r'{file_path}')
 
-# 筛选数据（示例：筛选非空值）
+# 筛选数据：筛选'{filter_col}'列中包含'{filter_value}'的行
+filtered_df = df[df['{filter_col}'].astype(str).str.contains('{filter_value}', na=False, regex=False)]
+
+print("=" * 50)
+print("筛选结果:")
+print("=" * 50)
+print(f"筛选条件: {filter_col} 包含 '{filter_value}'")
+print(f"原始数据: {{len(df)}} 行")
+print(f"筛选后: {{len(filtered_df)}} 行")
+print("\\n")
+if len(filtered_df) > 0:
+    print(filtered_df)
+    print("\\n")
+    print(f"答案: 共有 {{len(filtered_df)}} 个学生来自{filter_value}班")
+else:
+    print("未找到匹配的数据")
+print("\\n")
+
+# 创建结果字典
+result = {{
+    'type': 'filter',
+    'filter_column': '{filter_col}',
+    'filter_value': '{filter_value}',
+    'original_count': len(df),
+    'filtered_count': len(filtered_df),
+    'answer': f"共有 {{len(filtered_df)}} 个学生来自{filter_value}班" if len(filtered_df) > 0 else "未找到匹配的数据",
+    'data': filtered_df.to_dict('records') if len(filtered_df) > 0 else []
+}}
+"""
+        else:
+            # 默认筛选非空值
+            code = f"""# 筛选分析
+import pandas as pd
+
+# 读取数据
+df = pd.read_excel(r'{file_path}')
+
+# 筛选数据（筛选非空值）
 filtered_df = df.dropna(subset={filter_cols_str})
 
 print("=" * 50)

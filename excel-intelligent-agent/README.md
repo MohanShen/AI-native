@@ -63,14 +63,26 @@ excel-intelligent-agent/
 - Python 3.8+
 - OpenAI API密钥
 
-### 2. 安装依赖
+### 2. 创建虚拟环境（推荐）
 
 ```bash
 cd excel-intelligent-agent
+python3 -m venv venv
+
+# 激活虚拟环境
+# macOS/Linux:
+source venv/bin/activate
+# Windows:
+# venv\Scripts\activate
+```
+
+### 3. 安装依赖
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. 配置OpenAI API密钥
+### 4. 配置OpenAI API密钥
 
 在启动应用后，通过Web界面输入您的OpenAI API密钥，或设置环境变量：
 
@@ -81,6 +93,8 @@ export OPENAI_API_KEY="your-api-key-here"
 ## 使用方法
 
 ### 1. 启动应用
+
+**注意**：确保虚拟环境已激活（命令行前应显示 `(venv)`）
 
 ```bash
 python app.py

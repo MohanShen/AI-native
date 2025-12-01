@@ -19,7 +19,6 @@ class NLPParser:
             api_key: OpenAI API密钥
             model: 使用的模型名称
         """
-        openai.api_key = api_key
         self.model = model
         self.client = openai.OpenAI(api_key=api_key)
     
@@ -52,11 +51,16 @@ class NLPParser:
 
 请分析用户意图并返回JSON格式的结果，包含以下字段：
 1. intent: 分析意图，可选值：sum（求和）、group（分组）、trend（趋势分析）、sort（排序）、filter（筛选）、statistics（统计）、correlation（相关性分析）、visualization（可视化）
-2. target_file: 最相关的文件名（从可用文件中选择）
-3. target_columns: 需要使用的列名列表（从目标文件的列中选择）
+2. target_file: 最相关的文件名（从可用文件中选择，必须完全匹配文件名）
+3. target_columns: 需要使用的列名列表（从目标文件的列中选择，必须完全匹配列名。例如：如果查询提到"班级"，选择列名中包含"班"的列，如"班级"）
 4. operation: 具体操作描述（中文）
-5. keywords: 从查询中提取的关键词列表
+5. keywords: 从查询中提取的关键词列表（包括筛选值，如"经济（2）"）
 6. analysis_type: 分析类型，如"销售趋势"、"地区统计"等
+
+重要提示：
+- target_columns必须从目标文件的实际列名中选择，完全匹配
+- 如果查询提到某个概念（如"班级"），选择最相关的列名（如"班级"列）
+- keywords应该包含查询中的所有重要词汇，包括筛选条件值
 
 只返回JSON，不要其他文字说明。
 """
