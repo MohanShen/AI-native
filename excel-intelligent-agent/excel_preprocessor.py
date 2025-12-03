@@ -60,6 +60,9 @@ class ExcelPreprocessor:
         try:
             file_name = os.path.basename(file_path)
             
+            # 实际用于分析的数据文件路径（默认是原始文件）
+            actual_data_path = file_path
+            
             # 如果使用LLM分析且OpenAI客户端可用，使用复杂处理流程
             if self.use_llm_analysis and self.openai_client:
                 try:
@@ -68,6 +71,8 @@ class ExcelPreprocessor:
                     if processed_file and os.path.exists(processed_file):
                         # 从处理后的文件读取
                         df = self._read_processed_file(processed_file)
+                        # 对于后续分析和代码执行，应使用重建后的文件路径
+                        actual_data_path = processed_file
                     else:
                         # 回退到简单处理
                         logger.warning(f"LLM处理失败，使用简单处理: {file_name}")
@@ -82,12 +87,18 @@ class ExcelPreprocessor:
             # 重塑为二维表：清理空行空列，重置索引
             df = self._reshape_to_2d(df)
             
+            # 打印预处理后的表头信息
+            self._print_preprocessed_headers(file_name, df)
+            
             # 存储处理后的数据
             self.processed_files[file_name] = df
+            # 将实际用于分析的数据文件路径放入DataFrame属性，作为额外保险
+            df.attrs['file_path'] = actual_data_path
             
             # 存储元数据
             self.file_metadata[file_name] = {
-                'path': file_path,
+                # 这里的path用于后续代码执行，应指向实际的数据文件（重建后文件）
+                'path': actual_data_path,
                 'columns': list(df.columns),
                 'shape': df.shape,
                 'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
@@ -436,6 +447,14 @@ class ExcelPreprocessor:
                     
                     reconstructed_data[sheet_name] = df
                     logger.info(f"    最终: {len(df)} 行 × {len(df.columns)} 列")
+                    
+                    # 打印重建后的表头信息
+                    print(f"\n📋 工作表 '{sheet_name}' 重建后的表头:")
+                    print(f"  列名: {list(df.columns)}")
+                    if len(df) > 0:
+                        print(f"  前3行数据:")
+                        print(df.head(3).to_string())
+                        print()
             
             logger.info(f"Step 3 完成。处理了 {len(reconstructed_data)} 个工作表")
             return reconstructed_data
@@ -753,3 +772,37 @@ class ExcelPreprocessor:
                 matching_files.append(file_name)
         
         return matching_files
+    
+    def _print_preprocessed_headers(self, file_name: str, df: pd.DataFrame) -> None:
+        """
+        打印预处理后的表头信息
+        
+        Args:
+            file_name: 文件名
+            df: 预处理后的DataFrame
+        """
+        print("\n" + "=" * 70)
+        print(f"📊 预处理后的表头信息: {file_name}")
+        print("=" * 70)
+        print(f"数据形状: {df.shape[0]} 行 × {df.shape[1]} 列")
+        print(f"\n列名列表 ({len(df.columns)} 列):")
+        print("-" * 70)
+        for i, col in enumerate(df.columns, 1):
+            dtype = df[col].dtype
+            non_null_count = df[col].notna().sum()
+            print(f"  {i:2d}. {col:30s} | 类型: {str(dtype):10s} | 非空值: {non_null_count}/{len(df)}")
+        
+        print("\n前5行数据预览:")
+        print("-" * 70)
+        if len(df) > 0:
+            # 显示前5行，限制列宽以便查看
+            preview_df = df.head(5)
+            # 如果列太多，只显示前10列
+            if len(df.columns) > 10:
+                preview_df = preview_df.iloc[:, :10]
+                print(f"(仅显示前10列，共{len(df.columns)}列)")
+            print(preview_df.to_string())
+        else:
+            print("  (数据为空)")
+        
+        print("=" * 70 + "\n")

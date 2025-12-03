@@ -42,7 +42,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # 初始化组件
 preprocessor = ExcelPreprocessor(knowledge_base_path="knowledge_base", openai_client=None, use_llm_analysis=False)
 nlp_parser = None  # 将在启动时初始化
-code_generator = CodeGenerator()
+code_generator = CodeGenerator(openai_client=None)  # 将在初始化API密钥时设置
 
 # 存储当前会话数据
 session_data = {}
@@ -56,13 +56,14 @@ def index():
 
 def _initialize_nlp_parser(api_key: str):
     """初始化NLP解析器的辅助函数"""
-    global nlp_parser, preprocessor
+    global nlp_parser, preprocessor, code_generator
     nlp_parser = NLPParser(api_key=api_key)
     
-    # 同时更新preprocessor的OpenAI客户端，启用LLM分析
+    # 同时更新preprocessor和code_generator的OpenAI客户端，启用LLM分析
     openai_client = openai.OpenAI(api_key=api_key)
     preprocessor.openai_client = openai_client
     preprocessor.use_llm_analysis = True
+    code_generator.openai_client = openai_client
     
     return nlp_parser
 
@@ -127,7 +128,8 @@ def query():
         # 设置文件路径属性
         df.attrs['file_path'] = file_path
         
-        # 生成代码
+        # 生成代码（传递原始查询文本）
+        intent['original_query'] = query_text
         generated_code = code_generator.generate_code(intent, file_path, df)
         used_columns = code_generator.get_used_columns()
         
@@ -212,7 +214,8 @@ def handle_voice_query(data):
         file_path = preprocessor.file_metadata[target_file]['path']
         df.attrs['file_path'] = file_path
         
-        # 生成代码
+        # 生成代码（传递原始查询文本）
+        intent['original_query'] = query_text
         generated_code = code_generator.generate_code(intent, file_path, df)
         used_columns = code_generator.get_used_columns()
         emit('code_generated', {'code': generated_code, 'used_columns': used_columns})

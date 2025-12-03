@@ -47,6 +47,7 @@ class CodeExecutor:
             'np': __import__('numpy'),
             'plt': __import__('matplotlib.pyplot'),
             'datetime': __import__('datetime').datetime,
+            'file_path': self.file_path,  # 提供file_path变量供代码使用
             '__builtins__': __builtins__
         }
         
